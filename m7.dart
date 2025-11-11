@@ -1,0 +1,202 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const BankApp());
+}
+
+class BankApp extends StatelessWidget {
+  const BankApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Simple Bank Account Manager',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(primarySwatch: Colors.indigo),
+      home: const BankHomePage(),
+    );
+  }
+}
+
+class BankHomePage extends StatefulWidget {
+  const BankHomePage({super.key});
+
+  @override
+  State<BankHomePage> createState() => _BankHomePageState();
+}
+
+class _BankHomePageState extends State<BankHomePage> {
+  final TextEditingController _holderController = TextEditingController();
+  final TextEditingController _balanceController = TextEditingController();
+
+  final CollectionReference _accounts =
+      FirebaseFirestore.instance.collection('accounts');
+
+  Future<void> _addAccount() async {
+    final name = _holderController.text.trim();
+    final balanceText = _balanceController.text.trim();
+
+    if (name.isEmpty || balanceText.isEmpty) return;
+
+    final balance = double.tryParse(balanceText) ?? 0.0;
+
+    await _accounts.add({
+      'accountHolder': name,
+      'balance': balance,
+    });
+
+    _holderController.clear();
+    _balanceController.clear();
+  }
+
+  Future<void> _deleteAccount(String id) async {
+    await _accounts.doc(id).delete();
+  }
+
+  double _calculateTotal(List<QueryDocumentSnapshot> docs) {
+    double total = 0;
+    for (var doc in docs) {
+      total += (doc['balance'] ?? 0).toDouble();
+    }
+    return total;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Simple Bank Account Manager'),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // Input Section
+            TextField(
+              controller: _holderController,
+              decoration: const InputDecoration(
+                labelText: 'Account Holder Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _balanceController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Initial Balance',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 15),
+            ElevatedButton(
+              onPressed: _addAccount,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+              ),
+              child: const Text(
+                'Add Account',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Display Accounts
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _accounts.snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Error loading data'));
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final docs = snapshot.data!.docs;
+                  final total = _calculateTotal(docs);
+
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: docs.length,
+                          itemBuilder: (context, index) {
+                            final doc = docs[index];
+                            final name = doc['accountHolder'] ?? 'Unknown';
+                            final balance =
+                                (doc['balance'] ?? 0).toDouble();
+
+                            return Card(
+                              elevation: 3,
+                              margin:
+                                  const EdgeInsets.symmetric(vertical: 6.0),
+                              child: ListTile(
+                                title: Text(
+                                  name,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(
+                                  'Balance: ₹${balance.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                    color: balance == 0
+                                        ? Colors.red
+                                        : Colors.black87,
+                                  ),
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (balance == 0)
+                                      const Padding(
+                                        padding: EdgeInsets.only(right: 8.0),
+                                        child: Text(
+                                          'Low Balance!',
+                                          style: TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.grey),
+                                      onPressed: () =>
+                                          _deleteAccount(doc.id),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Total Bank Balance: ₹${total.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
